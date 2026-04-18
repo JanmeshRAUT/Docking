@@ -4,6 +4,7 @@ raw_data/
 *.jpg
 *.png
 *.csv
+!Visualization/*.png
 
 # --- Python ---
 __pycache__/
