@@ -91,8 +91,13 @@ class ISSDockingDataset(Dataset):
                 image = TF.hflip(image)
                 x = 1.0 - x
             
-            color_jitter = transforms.ColorJitter(brightness=0.2, contrast=0.2)
-            image = color_jitter(image)
+            # Apply color jitter with error handling
+            try:
+                color_jitter = transforms.ColorJitter(brightness=0.2, contrast=0.2)
+                image = color_jitter(image)
+            except Exception as e:
+                # Skip augmentation if it fails (e.g., corrupted image)
+                pass
 
         image = TF.resize(image, (TARGET_SIZE, TARGET_SIZE))
         image = TF.to_tensor(image)
