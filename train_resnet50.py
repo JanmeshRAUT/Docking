@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import models
 from datapreprocess import get_dataloaders
+from tqdm import tqdm
 import os
 
 # --- 1. Parameters ---
@@ -81,8 +82,9 @@ def train_model():
     for epoch in range(start_epoch, EPOCHS):
         model.train()
         running_train_loss = 0.0
+        train_progress = tqdm(train_loader, desc=f"Epoch {epoch+1}/{EPOCHS} [Train]", unit="batch")
         
-        for images, targets in train_loader:
+        for images, targets in train_progress:
             images, targets = images.to(DEVICE), targets.to(DEVICE)
             
             optimizer.zero_grad()
@@ -96,8 +98,9 @@ def train_model():
         # --- Validation ---
         model.eval()
         running_val_loss = 0.0
+        val_progress = tqdm(val_loader, desc=f"Epoch {epoch+1}/{EPOCHS} [Val] ", unit="batch")
         with torch.no_grad():
-            for images, targets in val_loader:
+            for images, targets in val_progress:
                 images, targets = images.to(DEVICE), targets.to(DEVICE)
                 outputs = model(images)
                 v_loss = criterion(outputs, targets)
