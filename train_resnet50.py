@@ -8,7 +8,7 @@ import os
 # --- 1. Parameters ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 BATCH_SIZE = 32
-EPOCHS = 200  # Increased epochs with early stopping
+EPOCHS = 20  # Increased epochs with early stopping
 LEARNING_RATE = 1e-4 # 10^-4
 MODEL_SAVE_PATH = "resnet50_docking_best.pth"
 CHECKPOINT_PATH = "training_checkpoint.pth"  # For resuming training

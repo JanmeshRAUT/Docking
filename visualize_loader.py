@@ -10,7 +10,7 @@ OUTPUT_DIR = "Visualization"
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
 
-def imshow_minimal(img_tensor, target, img_id, ax):
+def imshow_minimal(img_tensor, target, img_id, ax, color='red'):
     """Simple denormalize and plot on axis with Image ID."""
     mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
     std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
@@ -22,7 +22,7 @@ def imshow_minimal(img_tensor, target, img_id, ax):
     y_px = target[1] * 224
     
     ax.imshow(img_np)
-    ax.scatter(x_px, y_px, c='red', marker='x', s=60, linewidth=2)
+    ax.scatter(x_px, y_px, c=color, marker='x', s=60, linewidth=2)
     ax.set_title(f"ID: {img_id}", fontsize=12, fontweight='bold')
     ax.axis('off')
 
@@ -35,6 +35,9 @@ def generate_10_batches_with_ids():
     # We need access to ImageIDs, which are in the dataset's dataframe
     df = dataset.df
     
+    # Color palette for visualization
+    colors = ['red', 'blue', 'lime', 'cyan', 'yellow', 'magenta', 'orange', 'white', 'pink', 'purple']
+    
     for b in range(10):
         fig, axes = plt.subplots(2, 5, figsize=(20, 8))
         axes = axes.flatten()
@@ -44,7 +47,8 @@ def generate_10_batches_with_ids():
             idx = start_idx + i
             img_tensor, target = dataset[idx]
             img_id = int(df.iloc[idx]['ImageID'])
-            imshow_minimal(img_tensor, target, img_id, axes[i])
+            color = colors[i % len(colors)]  # Cycle through colors
+            imshow_minimal(img_tensor, target, img_id, axes[i], color=color)
         
         plt.tight_layout()
         filename = os.path.join(OUTPUT_DIR, f"docking_batch_{b+1}.png")
