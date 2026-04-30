@@ -17,7 +17,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 
-MODEL_PATH = os.path.join(PROJECT_ROOT, "docking_model_3epoch.pth")
+MODEL_PATH = os.path.join(PROJECT_ROOT, "best_model.pth")
 
 TEST_CSV = os.path.join(PROJECT_ROOT, "Test", "test.csv")
 TEST_IMG_DIR = os.path.join(PROJECT_ROOT, "Test", "images")
@@ -84,7 +84,13 @@ val_transform = transforms.Compose([
 def load_model():
     model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
     num_ftrs = model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, 3)
+    model.fc = nn.Sequential(
+        nn.Linear(num_ftrs, 128),
+        nn.ReLU(),
+        nn.Dropout(0.3),
+        nn.Linear(128, 3),
+        nn.Sigmoid()
+    )
     model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
     model = model.to(DEVICE)
     model.eval()
