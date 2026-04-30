@@ -1,181 +1,217 @@
+import os
+import pandas as pd
+import cv2
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from torchvision import models
-from datapreprocess import get_dataloaders
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms
+from torchvision.models import resnet50, ResNet50_Weights
 from tqdm import tqdm
-import os
 
-# --- 1. Parameters ---
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# =========================
+# CONFIG
+# =========================
+IMG_SIZE = 224
 BATCH_SIZE = 32
-EPOCHS = 20  # Increased epochs with early stopping
-LEARNING_RATE = 1e-4 # 10^-4
-MODEL_SAVE_PATH = "resnet50_docking_best.pth"
-CHECKPOINT_PATH = "training_checkpoint.pth"  # For resuming training
-EARLY_STOP_PATIENCE = 15  # Stop if val loss doesn't improve for 15 epochs
-L2_REGULARIZATION = 1e-5  # Weight decay to prevent overfitting
-AUTO_RESUME = True  # Automatically resume from checkpoint if it exists
+EPOCHS = 5
+LR = 1e-4
 
-def train_model():
-    # --- 2. Data Loaders ---
-    train_loader, val_loader = get_dataloaders()
+TRAIN_IMG_DIR = "Train/images"
+TRAIN_CSV_PATH = "Train/train.csv"
 
-    # --- 3. Model Definition (ResNet50) ---
-    model = models.resnet50(pretrained=True)
-    
-    # Modify the fully connected layer for regression (3 outputs)
-    num_ftrs = model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, 3) # Predicts: [x, y, distance]
+VAL_IMG_DIR = "Validation/images"
+VAL_CSV_PATH = "Validation/validation.csv"
+
+TEST_IMG_DIR = "Test/images"
+TEST_CSV_PATH = "Test/test.csv"
+
+# =========================
+# DATASET
+# =========================
+class DockingDataset(Dataset):
+    def __init__(self, df, img_dir, transform=None):
+        self.df = df.reset_index(drop=True)
+        self.img_dir = img_dir
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        row = self.df.iloc[idx]
+
+        img_path = os.path.join(self.img_dir, row["ImageID"])
+        image = cv2.imread(img_path)
+
+        if image is None:
+            raise ValueError(f"Image not found: {img_path}")
+
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        if self.transform:
+            image = self.transform(image)
+
+        target = torch.tensor([
+            row["x_norm"],
+            row["y_norm"],
+            row["distance_norm"]
+        ], dtype=torch.float32)
+
+        return image, target
+
+# =========================
+# LOSS
+# =========================
+def loss_fn(pred, target):
+    loss_xy = nn.MSELoss()(pred[:, :2], target[:, :2])
+    loss_d  = nn.MSELoss()(pred[:, 2], target[:, 2])
+    return loss_xy + 0.3 * loss_d
+
+# =========================
+# MAIN
+# =========================
+if __name__ == "__main__":
+
+    import torch.multiprocessing as mp
+    mp.freeze_support()
+
+    # =========================
+    # FORCE CUDA
+    # =========================
+    if not torch.cuda.is_available():
+        raise RuntimeError("❌ CUDA not available")
+
+    DEVICE = torch.device("cuda")
+
+    # =========================
+    # LOAD DATA
+    # =========================
+    train_df = pd.read_csv(TRAIN_CSV_PATH)
+    val_df = pd.read_csv(VAL_CSV_PATH)
+    test_df = pd.read_csv(TEST_CSV_PATH)
+
+    # =========================
+    # TRANSFORMS
+    # =========================
+    train_transform = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        transforms.RandomRotation(10),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])
+    ])
+
+    val_transform = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])
+    ])
+
+    # =========================
+    # LOADERS
+    # =========================
+    train_loader = DataLoader(
+        DockingDataset(train_df, TRAIN_IMG_DIR, train_transform),
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=0
+    )
+
+    val_loader = DataLoader(
+        DockingDataset(val_df, VAL_IMG_DIR, val_transform),
+        batch_size=BATCH_SIZE,
+        num_workers=0
+    )
+
+    test_loader = DataLoader(
+        DockingDataset(test_df, TEST_IMG_DIR, val_transform),
+        batch_size=BATCH_SIZE,
+        num_workers=0
+    )
+
+    # =========================
+    # MODEL
+    # =========================
+    model = resnet50(weights=ResNet50_Weights.DEFAULT)
+
+    model.fc = nn.Sequential(
+        nn.Linear(model.fc.in_features, 128),
+        nn.ReLU(),
+        nn.Dropout(0.3),
+        nn.Linear(128, 3),
+        nn.Sigmoid()
+    )
+
     model = model.to(DEVICE)
 
-    # --- 4. Optimization ---
-    criterion = nn.SmoothL1Loss() # More robust to outliers than MSE
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=L2_REGULARIZATION)
+    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.5)
 
-    # --- 5. Resume from Checkpoint ---
-    start_epoch = 0
-    best_loss = float('inf')
-    patience_counter = 0
-    
-    # Check if checkpoint exists
-    checkpoint_exists = os.path.exists(CHECKPOINT_PATH)
-    model_exists = os.path.exists(MODEL_SAVE_PATH)
-    
-    if checkpoint_exists and AUTO_RESUME:
-        print("="*60)
-        print("CHECKPOINT FOUND! Resuming training...")
-        print("="*60)
-        try:
-            checkpoint = torch.load(CHECKPOINT_PATH, map_location=DEVICE)
-            start_epoch = checkpoint['epoch']
-            best_loss = checkpoint['best_loss']
-            patience_counter = checkpoint['patience_counter']
-            
-            # Load model and optimizer states
-            model.load_state_dict(checkpoint['model_state'])
-            optimizer.load_state_dict(checkpoint['optimizer_state'])
-            
-            print(f"✓ Checkpoint loaded successfully!")
-            print(f"  - Resuming from epoch: {start_epoch + 1}/{EPOCHS}")
-            print(f"  - Best validation loss: {best_loss:.6f}")
-            print(f"  - Patience counter: {patience_counter}/{EARLY_STOP_PATIENCE}")
-            print("="*60 + "\n")
-        except Exception as e:
-            print(f"⚠ Error loading checkpoint: {e}")
-            print("Starting fresh training...\n")
-            start_epoch = 0
-            best_loss = float('inf')
-            patience_counter = 0
-    elif model_exists and AUTO_RESUME:
-        print(f"⚠ Model weights found but no checkpoint.")
-        print("Starting fresh training from epoch 1...\n")
-        start_epoch = 0
-    else:
-        print("Starting fresh training from epoch 1...\n")
-        start_epoch = 0
+    best_val_loss = float("inf")
 
-    # --- 6. Training Loop ---
-    print(f"Training on {DEVICE} for {EPOCHS} epochs (with Early Stopping)...")
-    print(f"Early Stopping Patience: {EARLY_STOP_PATIENCE} epochs\n")
-    
-    for epoch in range(start_epoch, EPOCHS):
+    # =========================
+    # TRAIN LOOP
+    # =========================
+    for epoch in range(EPOCHS):
+
         model.train()
-        running_train_loss = 0.0
-        train_progress = tqdm(train_loader, desc=f"Epoch {epoch+1}/{EPOCHS} [Train]", unit="batch")
-        
-        for images, targets in train_progress:
-            images, targets = images.to(DEVICE), targets.to(DEVICE)
-            
+        train_loss = 0
+
+        for images, targets in tqdm(train_loader):
+            images = images.to(DEVICE)
+            targets = targets.to(DEVICE)
+
+            preds = model(images)
+            loss = loss_fn(preds, targets)
+
             optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, targets)
             loss.backward()
             optimizer.step()
-            
-            running_train_loss += loss.item() * images.size(0)
 
-        # --- Validation ---
+            train_loss += loss.item()
+
+        # =========================
+        # VALIDATION + TEST
+        # =========================
         model.eval()
-        running_val_loss = 0.0
-        val_progress = tqdm(val_loader, desc=f"Epoch {epoch+1}/{EPOCHS} [Val] ", unit="batch")
+        val_loss = 0
+        test_loss = 0
+
         with torch.no_grad():
-            for images, targets in val_progress:
-                images, targets = images.to(DEVICE), targets.to(DEVICE)
-                outputs = model(images)
-                v_loss = criterion(outputs, targets)
-                running_val_loss += v_loss.item() * images.size(0)
+            for images, targets in val_loader:
+                images = images.to(DEVICE)
+                targets = targets.to(DEVICE)
 
-        epoch_train_loss = running_train_loss / len(train_loader.dataset)
-        epoch_val_loss = running_val_loss / len(val_loader.dataset)
+                preds = model(images)
+                loss = loss_fn(preds, targets)
+                val_loss += loss.item()
 
-        print(f"Epoch [{epoch+1}/{EPOCHS}] | Train Loss: {epoch_train_loss:.6f} | Val Loss: {epoch_val_loss:.6f}", end="")
+            for images, targets in test_loader:
+                images = images.to(DEVICE)
+                targets = targets.to(DEVICE)
 
-        # --- Save Best Model & Early Stopping ---
-        if epoch_val_loss < best_loss:
-            best_loss = epoch_val_loss
-            patience_counter = 0  # Reset patience counter
-            torch.save(model.state_dict(), MODEL_SAVE_PATH)
-            print(" ✓ Better weights saved", end="")
-        else:
-            patience_counter += 1
-            print(f" (No improvement for {patience_counter}/{EARLY_STOP_PATIENCE} epochs)", end="")
-        
-        # --- Save Checkpoint after Every Epoch ---
-        try:
-            checkpoint_data = {
-                'epoch': epoch + 1,
-                'best_loss': best_loss,
-                'patience_counter': patience_counter,
-                'model_state': model.state_dict(),
-                'optimizer_state': optimizer.state_dict(),
-                'train_loss': epoch_train_loss,
-                'val_loss': epoch_val_loss
-            }
-            torch.save(checkpoint_data, CHECKPOINT_PATH)
-            print(" | Checkpoint saved")
-        except Exception as e:
-            print(f" | ⚠ Checkpoint save failed: {e}")
-        
-        # Early stopping check
-        if patience_counter >= EARLY_STOP_PATIENCE:
-            print(f"\n⚠ Early Stopping triggered! Validation loss did not improve for {EARLY_STOP_PATIENCE} epochs.")
-            print(f"Best Model saved with Val Loss: {best_loss:.6f}")
-            break
+                preds = model(images)
+                loss = loss_fn(preds, targets)
+                test_loss += loss.item()
 
-    print("\nTraining Finished.")
+        scheduler.step()
 
-def show_checkpoint_info():
-    """Display information about the saved checkpoint."""
-    if os.path.exists(CHECKPOINT_PATH):
-        try:
-            checkpoint = torch.load(CHECKPOINT_PATH, map_location='cpu')
-            print("\n" + "="*60)
-            print("CHECKPOINT INFORMATION")
-            print("="*60)
-            print(f"Last Epoch: {checkpoint['epoch']}")
-            print(f"Best Validation Loss: {checkpoint['best_loss']:.6f}")
-            print(f"Patience Counter: {checkpoint['patience_counter']}/{EARLY_STOP_PATIENCE}")
-            print(f"Last Training Loss: {checkpoint['train_loss']:.6f}")
-            print(f"Last Validation Loss: {checkpoint['val_loss']:.6f}")
-            print("="*60 + "\n")
-        except Exception as e:
-            print(f"Error reading checkpoint: {e}")
-    else:
-        print("No checkpoint file found.")
+        val_loss /= len(val_loader)
+        test_loss /= len(test_loader)
+        train_loss /= len(train_loader)
 
-if __name__ == "__main__":
-    print("\n" + "="*60)
-    print("RESNET50 DOCKING POSITION PREDICTION - TRAINING")
-    print("="*60)
-    print(f"Device: {DEVICE}")
-    print(f"Batch Size: {BATCH_SIZE}")
-    print(f"Max Epochs: {EPOCHS}")
-    print(f"Learning Rate: {LEARNING_RATE}")
-    print(f"L2 Regularization: {L2_REGULARIZATION}")
-    print(f"Early Stop Patience: {EARLY_STOP_PATIENCE}")
-    print(f"Auto Resume: {AUTO_RESUME}")
-    print("="*60 + "\n")
-    
-    train_model()
-    show_checkpoint_info()
+        print(f"\nEpoch {epoch+1}/{EPOCHS}")
+        print(f"Train Loss: {train_loss:.4f}")
+        print(f"Val Loss: {val_loss:.4f}")
+        print(f"Test Loss: {test_loss:.4f}")
+
+        # =========================
+        # SAVE BEST MODEL
+        # =========================
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), "best_model.pth")
+
+    print("\n🚀 Training Complete")

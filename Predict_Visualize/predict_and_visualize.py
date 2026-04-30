@@ -12,18 +12,23 @@ from torch.utils.data import Dataset, DataLoader
 
 # --- 1. Configuration ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-MODEL_PATH = "docking_model_3epoch.pth"
 
-TEST_CSV = os.path.join("Test", "test.csv")
-TEST_IMG_DIR = os.path.join("Test", "images")
+# Get the directory where this script is located
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 
-VAL_CSV = os.path.join("Validation", "validation.csv")
-VAL_IMG_DIR = os.path.join("Validation", "images")
+MODEL_PATH = os.path.join(PROJECT_ROOT, "docking_model_3epoch.pth")
 
-OUTPUT_DIR = "Visualization"
+TEST_CSV = os.path.join(PROJECT_ROOT, "Test", "test.csv")
+TEST_IMG_DIR = os.path.join(PROJECT_ROOT, "Test", "images")
+
+VAL_CSV = os.path.join(PROJECT_ROOT, "Validation", "validation.csv")
+VAL_IMG_DIR = os.path.join(PROJECT_ROOT, "Validation", "images")
+
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "Visualization")
 
 if not os.path.exists(OUTPUT_DIR):
-    os.makedirs(OUTPUT_DIR)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # =========================
 # CUSTOM DATASET CLASS
