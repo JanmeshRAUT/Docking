@@ -23,8 +23,7 @@ raw_dict = {
     for _, row in raw_df.iterrows()
 }
 
-errors_old = []
-errors_new = []
+errors = []
 
 for _, row in tqdm(proc_df.iterrows(), total=len(proc_df)):
 
@@ -50,24 +49,30 @@ for _, row in tqdm(proc_df.iterrows(), total=len(proc_df)):
     y_norm = row["y_norm"]
     x_offset = row["x_offset"]
     y_offset = row["y_offset"]
+    orig_w = row["orig_w"]
+    orig_h = row["orig_h"]
+    flipped = row["flipped"] if "flipped" in row else False
 
     # =========================
-    # OLD WRONG RECONSTRUCTION
+    # CORRECT RECONSTRUCTION (accounts for flips)
     # =========================
-    x_old = int(x_norm * IMG_SIZE + x_offset)
-    y_old = int(y_norm * IMG_SIZE + y_offset)
-
-    err_old = np.sqrt((x_raw - x_old)**2 + (y_raw - y_old)**2)
-    errors_old.append(err_old)
-
-    # =========================
-    # NEW CORRECT RECONSTRUCTION
-    # =========================
-    x_new = int(round(x_norm * IMG_SIZE)) + x_offset
-    y_new = int(round(y_norm * IMG_SIZE)) + y_offset
+    # Denormalize from [0, 1] to [0, 224]
+    x_in_crop = x_norm * IMG_SIZE
+    y_in_crop = y_norm * IMG_SIZE
+    
+    # If flipped, reverse the x coordinate
+    if flipped:
+        x_in_crop = IMG_SIZE - 1 - x_in_crop
+    
+    # Transform back to original image space
+    x_reconstructed = x_in_crop + x_offset
+    y_reconstructed = y_in_crop + y_offset
+    
+    x_new = int(x_reconstructed)
+    y_new = int(y_reconstructed)
 
     err_new = np.sqrt((x_raw - x_new)**2 + (y_raw - y_new)**2)
-    errors_new.append(err_new)
+    errors.append(err_new)
 
     # =========================
     # VISUALIZATION
@@ -77,21 +82,14 @@ for _, row in tqdm(proc_df.iterrows(), total=len(proc_df)):
     # Ground truth (Red)
     cv2.circle(vis, (x_raw, y_raw), 6, (0, 0, 255), -1)
 
-    # Old (Blue)
-    cv2.circle(vis, (x_old, y_old), 6, (255, 0, 0), -1)
-
-    # New (Green)
+    # Reconstructed (Green)
     cv2.circle(vis, (x_new, y_new), 6, (0, 255, 0), -1)
 
-    # Lines
-    cv2.line(vis, (x_raw, y_raw), (x_old, y_old), (255, 0, 0), 2)
+    # Line
     cv2.line(vis, (x_raw, y_raw), (x_new, y_new), (0, 255, 0), 2)
 
     # Text
-    cv2.putText(vis, f"Old Err: {err_old:.1f}px", (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-
-    cv2.putText(vis, f"New Err: {err_new:.1f}px", (10, 60),
+    cv2.putText(vis, f"Error: {err_new:.1f}px", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
     # Save
@@ -100,12 +98,11 @@ for _, row in tqdm(proc_df.iterrows(), total=len(proc_df)):
 # =========================
 # RESULTS
 # =========================
-print("\n===== COMPARISON REPORT =====")
-print(f"Old Mean Error: {np.mean(errors_old):.2f}px")
-print(f"Old Max Error: {np.max(errors_old):.2f}px")
-
-print(f"New Mean Error: {np.mean(errors_new):.2f}px")
-print(f"New Max Error: {np.max(errors_new):.2f}px")
-
-print("================================")
+print("\n===== RECONSTRUCTION ACCURACY =====")
+print(f"Mean Error: {np.mean(errors):.2f}px")
+print(f"Median Error: {np.median(errors):.2f}px")
+print(f"Max Error: {np.max(errors):.2f}px")
+print(f"Min Error: {np.min(errors):.2f}px")
+print(f"Std Dev: {np.std(errors):.2f}px")
+print("====================================")
 print(f"📁 Output: {OUTPUT_DIR}")

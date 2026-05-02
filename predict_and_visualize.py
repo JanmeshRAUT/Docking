@@ -12,15 +12,16 @@ from torch.utils.data import Dataset, DataLoader
 
 # --- 1. Configuration ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-MODEL_PATH = "docking_model_3epoch.pth"
 
-TEST_CSV = os.path.join("Test", "test.csv")
-TEST_IMG_DIR = os.path.join("Test", "images")
+# Get script directory for all paths
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(SCRIPT_DIR, "best_model.pth")
 
-VAL_CSV = os.path.join("Validation", "validation.csv")
-VAL_IMG_DIR = os.path.join("Validation", "images")
+# Use preprocessed data for validation
+PREPROCESS_CSV = os.path.join(SCRIPT_DIR, "Preprocess", "train_processed.csv")
+PREPROCESS_IMG_DIR = os.path.join(SCRIPT_DIR, "Preprocess", "images")
 
-OUTPUT_DIR = "Visualization"
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "Visualization")
 
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
@@ -41,8 +42,13 @@ class DockingDataset(Dataset):
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
         
+        # Handle image ID with or without extension
+        img_id = str(row["ImageID"])
+        if not img_id.endswith('.jpg'):
+            img_id = f"{img_id}.jpg"
+        
         # Load image
-        img_path = os.path.join(self.img_dir, row["ImageID"])
+        img_path = os.path.join(self.img_dir, img_id)
         image = cv2.imread(img_path)
         
         if image is None:
@@ -79,7 +85,13 @@ val_transform = transforms.Compose([
 def load_model():
     model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
     num_ftrs = model.fc.in_features
-    model.fc = nn.Linear(num_ftrs, 3)
+    model.fc = nn.Sequential(
+        nn.Linear(num_ftrs, 128),
+        nn.ReLU(),
+        nn.Dropout(0.3),
+        nn.Linear(128, 3),
+        nn.Sigmoid()
+    )
     model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
     model = model.to(DEVICE)
     model.eval()
@@ -95,14 +107,14 @@ def denormalize_coords(x_norm, y_norm, dist_norm, img_size=512, max_dist=None):
 
 # --- 4. Make Predictions ---
 def predict_on_test_set(model):
-    test_dataset = DockingDataset(csv_path=TEST_CSV, img_dir=TEST_IMG_DIR, transform=val_transform)
+    test_dataset = DockingDataset(csv_path=PREPROCESS_CSV, img_dir=PREPROCESS_IMG_DIR, transform=val_transform)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=0)
     
     predictions = []
     actuals = []
     image_ids = []
     
-    print(f"Making predictions on {len(test_dataset)} test samples...")
+    print(f"Making predictions on {len(test_dataset)} samples...")
     
     with torch.no_grad():
         for images, targets in test_loader:
@@ -120,14 +132,14 @@ def predict_on_test_set(model):
 
 # --- 4b. Make Predictions on Validation Set ---
 def predict_on_val_set(model):
-    val_dataset = DockingDataset(csv_path=VAL_CSV, img_dir=VAL_IMG_DIR, transform=val_transform)
+    val_dataset = DockingDataset(csv_path=PREPROCESS_CSV, img_dir=PREPROCESS_IMG_DIR, transform=val_transform)
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=0)
     
     predictions = []
     actuals = []
     image_ids = []
     
-    print(f"Making predictions on {len(val_dataset)} validation samples...")
+    print(f"Making predictions on {len(val_dataset)} samples...")
     
     with torch.no_grad():
         for images, targets in val_loader:

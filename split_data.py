@@ -3,16 +3,17 @@ import os
 import shutil
 from sklearn.model_selection import train_test_split
 
-# Set paths
-preprocess_dir = r"e:\Docking\Preprocess"
-csv_path = os.path.join(preprocess_dir, "train_processed.csv")
+# Set paths - using current working directory as base
+base_dir = os.getcwd()
+preprocess_dir = os.path.join(base_dir, "raw_data")
+csv_path = os.path.join(preprocess_dir, "train.csv")
 images_dir = os.path.join(preprocess_dir, "images")
 
 # Create output directories
 output_dirs = {
-    'train': r"e:\Docking\Train",
-    'test': r"e:\Docking\Test",
-    'valid': r"e:\Docking\Validation"
+    'train': os.path.join(base_dir, "Train"),
+    'test': os.path.join(base_dir, "Test"),
+    'valid': os.path.join(base_dir, "Validation")
 }
 
 for split_dir in output_dirs.values():
@@ -44,7 +45,7 @@ print("\nCSV files created successfully!")
 def copy_images(df, split_name, output_dir):
     image_output_dir = os.path.join(output_dir, "images")
     for idx, row in df.iterrows():
-        image_name = row['ImageID']
+        image_name = f"{str(row['ImageID'])}.jpg"
         source_path = os.path.join(images_dir, image_name)
         dest_path = os.path.join(image_output_dir, image_name)
         

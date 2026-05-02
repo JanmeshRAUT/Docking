@@ -116,9 +116,11 @@ def process_dataset(csv_path, img_dir, output_csv):
             # =========================
             # Flip (CORRECT)
             # =========================
+            flipped = False
             if random.random() < 0.5:
                 cropped = cv2.flip(cropped, 1)
                 x_rel = IMG_SIZE - 1 - x_rel   # ✅ FIXED
+                flipped = True
 
             # =========================
             # Extra augmentation
@@ -149,7 +151,8 @@ def process_dataset(csv_path, img_dir, output_csv):
                 "x_offset": x_min,
                 "y_offset": y_min,
                 "orig_w": orig_w,
-                "orig_h": orig_h
+                "orig_h": orig_h,
+                "flipped": flipped
             })
 
     # =========================
