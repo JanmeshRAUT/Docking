@@ -1,0 +1,39 @@
+# --- Data & Large Files ---
+Dataset/
+raw_data/
+*.jpg
+*.png
+*.csv
+!Visualization/*.png
+submission-3.csv
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Deep Learning (managed via Git LFS) ---
+*.pth
+*.pt
+*.h5
+*.ckpt
+outputs/
+checkpoints/
+runs/
+
+# --- IDEs ---
+.vscode/
+.idea/
+.ipynb_checkpoints
+*.swp
+*.swo
+
+# --- OS ---
+Thumbs.db
+Desktop.ini
