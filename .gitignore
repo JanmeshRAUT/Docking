@@ -5,6 +5,7 @@ raw_data/
 *.png
 *.csv
 !Visualization/*.png
+submission-3.csv
 
 # --- Python ---
 __pycache__/
@@ -17,19 +18,27 @@ venv/
 pip-log.txt
 pip-delete-this-directory.txt
 
-# --- Deep Learning ---
-# *.pth - Tracked via Git LFS
+# --- Deep Learning (managed via Git LFS) ---
+# *.pth files are tracked via Git LFS
 *.pt
 *.h5
 *.ckpt
 outputs/
 checkpoints/
+<<<<<<< HEAD
+=======
+runs/
+>>>>>>> ab42a8a21c0a934b05910b29ccf21fe54e865912
 
 # --- IDEs ---
 .vscode/
 .idea/
 .ipynb_checkpoints
 *.swp
+<<<<<<< HEAD
+=======
+*.swo
+>>>>>>> ab42a8a21c0a934b05910b29ccf21fe54e865912
 
 # --- OS ---
 Thumbs.db
